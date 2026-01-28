@@ -126,7 +126,7 @@ python3 waste_classifier.py
 
 ```bash
 # 1. Cloner le projet
-git clone https://github.com/votre-username/SmartBin_SI.git
+git clone https://github.com/sayfox8/SmartBin_SI.git
 cd SmartBin_SI
 
 # 2. Lancer l'installation automatique
@@ -585,7 +585,7 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de 
 ## 🗺️ Roadmap
 
 ### Version 1.0 ✅
-- [x] Détection YOLO basique
+- [ ] Détection YOLO basique
 - [x] Contrôle Arduino
 - [x] Base de données SQLite
 

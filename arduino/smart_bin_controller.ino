@@ -15,7 +15,7 @@
  * - 2x Servomoteurs MG996R
  * - NVIDIA Jetson Nano (via USB Série)
  * 
- * AUTEUR : Smart Bin SI Team
+ * AUTEUR : FlowCreativeStudio
  * DATE : 2026
  * ============================================
  */
