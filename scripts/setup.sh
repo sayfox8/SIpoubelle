@@ -1,482 +1,264 @@
 #!/bin/bash
 # ============================================
-# Smart Bin SI - Complete Setup Script
+# Smart Bin SI - Installation
 # ============================================
-# Installs all dependencies and sets up project structure
-# Compatible with NVIDIA Jetson Nano and standard Linux
+# Stack : YOLOv5 via torch.hub (modèle custom best.pt ou fallback yolov5s)
+# Pas d'Ultralytics YOLOv8.
+# Compatible : Linux, NVIDIA Jetson Nano
 
-set -e  # Exit on error
+set -e
 
-# ============================================
-# COLORS
-# ============================================
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# ============================================
-# LOGGING FUNCTIONS
-# ============================================
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+log_step()  { echo -e "\n${CYAN}[STEP]${NC} $1"; }
 
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_step() {
-    echo -e "\n${CYAN}[STEP]${NC} ${BLUE}$1${NC}"
-}
-
-# ============================================
-# HEADER
-# ============================================
-clear
+# --- En-tête ---
 echo -e "${CYAN}"
-cat << "EOF"
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║        🤖  SMART BIN SI - INSTALLATION SCRIPT  🗑️        ║
-║                                                           ║
-║              Automated Setup for Jetson Nano              ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
+cat << 'EOF'
+╔═══════════════════════════════════════════════════════╗
+║   Smart Bin SI - Installation (YOLOv5 torch.hub)     ║
+╚═══════════════════════════════════════════════════════╝
 EOF
-echo -e "${NC}\n"
+echo -e "${NC}"
 
-# ============================================
-# CHECK PRIVILEGES
-# ============================================
-if [ "$EUID" -eq 0 ]; then
-    log_error "Do not run with sudo. The script will ask for permissions when needed."
-    exit 1
-fi
+[ "$EUID" -eq 0 ] && log_error "Ne pas lancer avec sudo."
 
-# ============================================
-# PLATFORM DETECTION
-# ============================================
-log_step "Detecting Platform..."
-
-PLATFORM="unknown"
+# --- Plateforme ---
+log_step "Détection de la plateforme..."
 if [ -f /etc/nv_tegra_release ]; then
     PLATFORM="jetson"
-    log_info "Platform: NVIDIA Jetson"
+    log_info "NVIDIA Jetson détecté"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     PLATFORM="linux"
-    log_info "Platform: Linux (Generic)"
+    log_info "Linux générique"
 else
-    log_warn "Platform unknown - Attempting standard Linux installation"
     PLATFORM="linux"
+    log_warn "Plateforme inconnue, installation Linux standard"
 fi
 
-# ============================================
-# SYSTEM UPDATE
-# ============================================
-log_step "Updating System Packages..."
-
+# --- Mise à jour système ---
+log_step "Mise à jour des paquets..."
 sudo apt-get update -qq
-log_info "Package list updated"
 
-# ============================================
-# INSTALL SYSTEM DEPENDENCIES
-# ============================================
-log_step "Installing System Dependencies..."
-
+# --- Dépendances système ---
+log_step "Installation des dépendances système..."
 sudo apt-get install -y \
-    python3-pip \
-    python3-dev \
-    python3-tk \
-    build-essential \
-    git \
-    curl \
-    wget \
-    libhdf5-dev \
-    libatlas-base-dev \
-    libopenblas-dev \
-    liblapack-dev \
-    libjpeg-dev \
-    zlib1g-dev \
-    libpython3-dev \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev
+    python3-pip python3-dev python3-tk \
+    build-essential git curl wget \
+    libhdf5-dev libatlas-base-dev libopenblas-dev liblapack-dev \
+    libjpeg-dev zlib1g-dev libpython3-dev \
+    libavcodec-dev libavformat-dev libswscale-dev
 
-log_info "System dependencies installed"
+# --- Python ---
+PYVER=$(python3 --version 2>&1)
+log_info "Python : $PYVER"
+python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 6) else 1)" || log_error "Python 3.6+ requis."
 
-# ============================================
-# CHECK PYTHON VERSION
-# ============================================
-log_step "Checking Python Version..."
+# --- Arborescence ---
+log_step "Création de l'arborescence..."
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+mkdir -p src arduino models data/logs data/exports data/training_images
+mkdir -p datasets/{images,labels}/{train,val,test} tests docs scripts assets/{images,diagrams,videos}
+log_info "Racine projet : $ROOT"
 
-PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-log_info "Python version: $PYTHON_VERSION"
-
-if [[ ! "$PYTHON_VERSION" =~ ^3\.[6-9] ]]; then
-    log_error "Python 3.6+ required (found: $PYTHON_VERSION)"
-    exit 1
-fi
-
-# ============================================
-# CREATE PROJECT STRUCTURE
-# ============================================
-log_step "Creating Project Structure..."
-
-mkdir -p src
-mkdir -p arduino
-mkdir -p models
-mkdir -p data/logs
-mkdir -p data/exports
-mkdir -p datasets/{images,labels}/{train,val,test}
-mkdir -p tests
-mkdir -p docs
-mkdir -p assets/{images,diagrams,videos}
-mkdir -p scripts
-
-log_info "Directory structure created"
-
-# ============================================
-# UPGRADE PIP
-# ============================================
-log_step "Upgrading pip..."
-
+# --- pip ---
+log_step "Mise à jour de pip..."
 python3 -m pip install --upgrade pip setuptools wheel --user
 
-# ============================================
-# INSTALL PYTHON DEPENDENCIES
-# ============================================
-log_step "Installing Python Dependencies..."
+# --- Dépendances Python (sans PyTorch) ---
+log_step "Installation des dépendances Python..."
+pip3 install --user -r requirements.txt 2>/dev/null || pip3 install --user pyserial numpy Pillow opencv-python matplotlib pandas
 
-# Create requirements.txt if it doesn't exist
-if [ ! -f requirements.txt ]; then
-    cat > requirements.txt << EOF
-# Core Dependencies
-pyserial>=3.5
-numpy>=1.19.0
-Pillow>=8.0.0
-opencv-python>=4.5.0
-
-# YOLO (will handle PyTorch separately for Jetson)
-ultralytics>=8.0.0
-
-# Optional
-matplotlib>=3.3.0
-pandas>=1.3.0
-EOF
-    log_info "Created requirements.txt"
-fi
-
-# Install base dependencies
-pip3 install --user pyserial numpy Pillow opencv-python matplotlib pandas
-
-log_info "Base dependencies installed"
-
-# ============================================
-# JETSON-SPECIFIC PYTORCH INSTALLATION
-# ============================================
-if [ "$PLATFORM" == "jetson" ]; then
-    log_step "Installing PyTorch for Jetson..."
-    
-    # Check if PyTorch is already installed
-    if python3 -c "import torch" &> /dev/null; then
-        TORCH_VERSION=$(python3 -c "import torch; print(torch.__version__)")
-        log_info "PyTorch already installed: v$TORCH_VERSION"
+# --- PyTorch ---
+if [ "$PLATFORM" = "jetson" ]; then
+    log_step "PyTorch sur Jetson..."
+    if python3 -c "import torch" 2>/dev/null; then
+        log_info "PyTorch déjà installé : $(python3 -c 'import torch; print(torch.__version__)')"
     else
-        log_warn "PyTorch not found - Installing..."
-        log_warn "This may take 10-15 minutes..."
-        
-        # Download pre-built PyTorch wheel for Jetson
-        TORCH_WHEEL="torch-1.10.0-cp36-cp36m-linux_aarch64.whl"
-        TORCH_URL="https://nvidia.box.com/shared/static/fjtbno0vpo676a25cgvuqc1wty0fkkg6.whl"
-        
-        if [ ! -f "$TORCH_WHEEL" ]; then
-            wget -q --show-progress -O "$TORCH_WHEEL" "$TORCH_URL"
-        fi
-        
-        pip3 install --user "$TORCH_WHEEL"
-        rm "$TORCH_WHEEL"
-        
-        # Install torchvision
+        log_warn "Installation du wheel PyTorch Jetson (peut prendre 10–15 min)..."
+        WHEEL="torch-1.10.0-cp36-cp36m-linux_aarch64.whl"
+        URL="https://nvidia.box.com/shared/static/fjtbno0vpo676a25cgvuqc1wty0fkkg6.whl"
+        [ ! -f "$WHEEL" ] && wget -q --show-progress -O "$WHEEL" "$URL"
+        pip3 install --user "$WHEEL" && rm -f "$WHEEL"
         pip3 install --user torchvision
-        
-        log_info "PyTorch installed for Jetson"
+        log_info "PyTorch Jetson installé"
     fi
 else
-    # Standard Linux - Install PyTorch via pip
-    log_step "Installing PyTorch..."
+    log_step "Installation de PyTorch..."
     pip3 install --user torch torchvision
-    log_info "PyTorch installed"
+    log_info "PyTorch installé"
 fi
 
-# ============================================
-# INSTALL ULTRALYTICS YOLO
-# ============================================
-log_step "Installing Ultralytics YOLOv8..."
+# --- YOLOv5 (via torch.hub) ---
+log_step "Vérification YOLOv5 (torch.hub)..."
+log_info "Le projet utilise YOLOv5 via torch.hub (pas Ultralytics YOLOv8)."
+log_info "Modèle custom : mettre models/best.pt ; sinon YOLOv5s COCO sera utilisé au premier run."
 
-pip3 install --user ultralytics
+# --- Permissions série ---
+log_step "Permissions série (Arduino)..."
+sudo usermod -a -G dialout "$USER" 2>/dev/null || true
+log_warn "Déconnecte-toi / reconnecte-toi pour que le groupe dialout soit pris en compte."
 
-log_info "YOLOv8 installed"
+# --- Scripts de lancement ---
+log_step "Création des scripts..."
 
-# ============================================
-# CONFIGURE SERIAL PERMISSIONS
-# ============================================
-log_step "Configuring Serial Port Permissions..."
-
-# Add user to dialout group
-sudo usermod -a -G dialout $USER
-
-log_info "User added to 'dialout' group"
-log_warn "You need to LOG OUT and LOG BACK IN for serial permissions to take effect"
-
-# ============================================
-# CREATE LAUNCH SCRIPTS
-# ============================================
-log_step "Creating Launch Scripts..."
-
-# Script 1: Run Manual Mode
-cat > scripts/run_manual.sh << 'EOFSCRIPT'
+cat > scripts/run_manual.sh << 'LAUNCH'
 #!/bin/bash
 cd "$(dirname "$0")/.."
-python3 src/waste_classifier.py
-EOFSCRIPT
-chmod +x scripts/run_manual.sh
+exec python3 src/waste_classifier.py
+LAUNCH
 
-# Script 2: Run Auto Mode
-cat > scripts/run_auto.sh << 'EOFSCRIPT'
+cat > scripts/run_auto.sh << 'LAUNCH'
 #!/bin/bash
 cd "$(dirname "$0")/.."
-python3 src/yolo_detector.py
-EOFSCRIPT
-chmod +x scripts/run_auto.sh
+exec python3 src/yolo_detector.py
+LAUNCH
 
-# Script 3: Test Hardware
-cat > scripts/test_hardware.py << 'EOFSCRIPT'
+chmod +x scripts/run_manual.sh scripts/run_auto.sh
+
+# --- Script de test matériel (créé seulement s'il n'existe pas) ---
+if [ ! -f scripts/test_hardware.py ]; then
+cat > scripts/test_hardware.py << 'PYTEST'
 #!/usr/bin/env python3
-"""Quick hardware test script"""
+"""Tests : série, caméra, PyTorch, YOLOv5 (torch.hub)."""
 import sys
+from pathlib import Path
 
-print("Testing Hardware Connections...\n")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 
-# Test 1: Serial ports
-print("[1] Checking Serial Ports...")
+def ok(msg):  print("   ✓", msg)
+def fail(msg): print("   ✗", msg); return False
+def warn(msg): print("   ⚠", msg)
+
+print("Smart Bin SI - Test matériel / stack\n" + "=" * 50)
+
+# 1) Série
+print("\n[1] Ports série")
 try:
     import serial.tools.list_ports
     ports = list(serial.tools.list_ports.comports())
     if ports:
-        print(f"   ✓ Found {len(ports)} port(s):")
         for p in ports:
-            print(f"      - {p.device}")
+            ok(f"{p.device} - {p.description}")
     else:
-        print("   ✗ No serial ports found")
+        warn("Aucun port série (Arduino non branché ?)")
 except ImportError:
-    print("   ✗ pyserial not installed")
+    fail("pyserial non installé")
 
-# Test 2: Camera
-print("\n[2] Checking Camera...")
+# 2) Caméra
+print("\n[2] Caméra")
 try:
     import cv2
     cap = cv2.VideoCapture(0)
     if cap.isOpened():
-        print("   ✓ Camera accessible at /dev/video0")
+        ok("Caméra /dev/video0 accessible")
         cap.release()
     else:
-        print("   ✗ Camera not accessible")
+        warn("Caméra non accessible")
 except ImportError:
-    print("   ✗ opencv-python not installed")
+    fail("opencv-python non installé")
 
-# Test 3: PyTorch
-print("\n[3] Checking PyTorch...")
+# 3) PyTorch
+print("\n[3] PyTorch")
 try:
     import torch
-    print(f"   ✓ PyTorch v{torch.__version__}")
+    ok(f"PyTorch {torch.__version__}")
     if torch.cuda.is_available():
-        print(f"   ✓ CUDA available (GPU: {torch.cuda.get_device_name(0)})")
+        ok(f"CUDA : {torch.cuda.get_device_name(0)}")
     else:
-        print("   ⚠ CUDA not available (will use CPU)")
+        warn("CUDA non disponible (CPU)")
 except ImportError:
-    print("   ✗ PyTorch not installed")
+    fail("PyTorch non installé")
 
-# Test 4: YOLO
-print("\n[4] Checking YOLOv8...")
+# 4) YOLOv5 (torch.hub) — chargement complet si --yolo
+print("\n[4] YOLOv5 (torch.hub)")
 try:
-    from ultralytics import YOLO
-    print("   ✓ Ultralytics YOLOv8 installed")
-except ImportError:
-    print("   ✗ Ultralytics not installed")
+    import torch
+    ok(f"torch.hub disponible")
+    if "--yolo" in sys.argv:
+        model = torch.hub.load("ultralytics/yolov5", "yolov5s", pretrained=True)
+        ok("YOLOv5s chargé (1er run peut télécharger)")
+    else:
+        warn("Pour tester le chargement YOLOv5 : python3 scripts/test_hardware.py --yolo")
+except Exception as e:
+    fail(f"YOLOv5 torch.hub : {e}")
 
-print("\n" + "="*50)
-print("Hardware test complete!")
-print("="*50 + "\n")
-EOFSCRIPT
+# 5) Modèle custom
+print("\n[5] Modèle custom (optionnel)")
+custom = ROOT / "models" / "best.pt"
+if custom.exists():
+    ok(f"models/best.pt présent")
+else:
+    warn("models/best.pt absent → YOLOv5s COCO sera utilisé au premier run")
+
+print("\n" + "=" * 50 + "\n")
+PYTEST
 chmod +x scripts/test_hardware.py
+fi
 
-log_info "Launch scripts created"
+# --- Script de test applicatif (créé seulement s'il n'existe pas) ---
+if [ ! -f scripts/test_app.py ]; then
+cat > scripts/test_app.py << 'PYAPP'
+#!/usr/bin/env python3
+"""Test applicatif : config, waste_classifier, imports yolo_detector."""
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+def main():
+    print("Smart Bin SI - Test applicatif\n" + "=" * 50)
+    try:
+        import config
+        print("\n[1] config : OK")
+        import waste_classifier
+        waste_classifier.init_database()
+        waste_classifier.init_serial_connection()
+        print("[2] waste_classifier : OK")
+        waste_classifier.cleanup()
+        import yolo_detector
+        print("[3] yolo_detector : OK\n" + "=" * 50 + "\n")
+        return 0
+    except Exception as e:
+        print("   ✗", e)
+        return 1
+if __name__ == "__main__":
+    sys.exit(main())
+PYAPP
+chmod +x scripts/test_app.py
+fi
 
-# ============================================
-# CREATE .gitignore
-# ============================================
-log_step "Creating .gitignore..."
-
-cat > .gitignore << 'EOF'
-# Python
+# --- .gitignore (ne pas écraser si existant) ---
+if [ ! -f .gitignore ]; then
+    log_step "Création de .gitignore..."
+    cat > .gitignore << 'GIT'
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-.venv
-
-# Data
+venv/ .venv/ env/
 data/waste_items.db
 data/logs/*.log
-data/exports/*.csv
-data/exports/*.json
-
-# Models (if too large)
+data/exports/*
 models/*.pt
 !models/README.md
+.vscode/ .idea/
+.pytest_cache/ .coverage htmlcov/
+GIT
+fi
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-*.tmp
-
-# Jupyter
-.ipynb_checkpoints
-
-# Testing
-.pytest_cache/
-*.cover
-.coverage
-htmlcov/
-EOF
-
-log_info ".gitignore created"
-
-# ============================================
-# CREATE README
-# ============================================
-log_step "Creating README.md..."
-
-cat > README.md << 'EOF'
-# 🤖 Smart Bin SI - Intelligent Waste Sorting System
-
-Automated waste classification system using NVIDIA Jetson Nano, YOLOv8, and Arduino.
-
-## 🚀 Quick Start
-
-### 1. Manual Mode (Text Input)
-```bash
-bash scripts/run_manual.sh
-```
-
-### 2. Automatic Mode (Camera Detection)
-```bash
-bash scripts/run_auto.sh
-```
-
-### 3. Test Hardware
-```bash
-python3 scripts/test_hardware.py
-```
-
-## 📁 Project Structure
-
-```
-SmartBin_SI/
-├── src/              # Python source code
-├── arduino/          # Arduino firmware
-├── models/           # YOLO models
-├── data/             # Database and logs
-├── scripts/          # Launch scripts
-└── docs/             # Documentation
-```
-
-## 📚 Documentation
-
-- [Installation Guide](docs/INSTALLATION.md)
-- [Usage Guide](docs/USAGE.md)
-- [Hardware Setup](docs/HARDWARE_SETUP.md)
-- [YOLO Training](docs/YOLO_TRAINING.md)
-
-## 🔧 Configuration
-
-Edit `src/config.py` to customize:
-- Model selection
-- Camera settings
-- Arduino port
-- Waste-to-bin mapping
-
-## 🎯 Next Steps
-
-1. Download a pre-trained model:
-   ```bash
-   python3 scripts/download_model.py
-   ```
-
-2. Upload Arduino code:
-   - Open `arduino/smart_bin_controller.ino` in Arduino IDE
-   - Select board: Arduino Uno
-   - Upload
-
-3. Run the system!
-
-## 📞 Support
-
-See `docs/TROUBLESHOOTING.md` for common issues.
-
----
-
-**License:** MIT  
-**Author:** Smart Bin SI Team
-EOF
-
-log_info "README.md created"
-
-# ============================================
-# FINAL SUMMARY
-# ============================================
-echo -e "\n${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║                                                           ║${NC}"
-echo -e "${GREEN}║              ✅  INSTALLATION COMPLETE!  ✅               ║${NC}"
-echo -e "${GREEN}║                                                           ║${NC}"
-echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}\n"
-
-echo -e "${CYAN}📁 Project Location:${NC} $(pwd)"
-echo -e "${CYAN}🐍 Python Version:${NC} $PYTHON_VERSION"
-echo -e "${CYAN}🖥️  Platform:${NC} $PLATFORM"
-
-echo -e "\n${YELLOW}⚠️  IMPORTANT NEXT STEPS:${NC}\n"
-echo "1. LOG OUT and LOG BACK IN to apply serial permissions"
-echo "2. Download a YOLO model:"
-echo "   ${CYAN}python3 scripts/download_model.py${NC}"
+# --- Résumé ---
+echo -e "\n${GREEN}Installation terminée.${NC}\n"
+echo "Prochaines étapes :"
+echo "  1. Se déconnecter/reconnecter (série)"
+echo "  2. Tester :  python3 scripts/test_hardware.py"
+echo "  3. Test app :  python3 scripts/test_app.py"
+echo "  4. Mode manuel :  bash scripts/run_manual.sh"
+echo "  5. Mode auto (caméra) :  bash scripts/run_auto.sh"
 echo ""
-echo "3. Upload Arduino code:"
-echo "   ${CYAN}arduino/smart_bin_controller.ino${NC}"
-echo ""
-echo "4. Test hardware connections:"
-echo "   ${CYAN}python3 scripts/test_hardware.py${NC}"
-echo ""
-echo "5. Run the system:"
-echo "   Manual:  ${CYAN}bash scripts/run_manual.sh${NC}"
-echo "   Auto:    ${CYAN}bash scripts/run_auto.sh${NC}"
-
-echo -e "\n${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║       🎉 Happy Waste Sorting! 🗑️ ♻️                       ║${NC}"
-echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}\n"

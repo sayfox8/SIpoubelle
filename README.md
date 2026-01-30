@@ -495,6 +495,8 @@ Pour améliorer les performances :
 
 ## 🎓 Entraîner Ton Propre Modèle
 
+> **Guide détaillé étape par étape (logiciels, app web Roboflow, où mettre quoi) : [docs/ENTRAINEMENT_IA.md](docs/ENTRAINEMENT_IA.md)**
+
 ### Dataset Recommandés
 
 1. **TrashNet** (2527 images, 6 classes)

@@ -50,6 +50,8 @@ Tu peux :
 
 ## 4. Entraîner ta base (modèle initial)
 
+**→ Guide complet étape par étape (logiciels, web app, où mettre quoi) : [ENTRAINEMENT_IA.md](ENTRAINEMENT_IA.md)**
+
 1. **Préparer un jeu de données**  
    - Images de tes déchets, avec annotations au format YOLO (fichiers `.txt` par image : `class_id x_center y_center width height` normalisés).
    - Tu peux utiliser [Roboflow](https://roboflow.com/), [LabelImg](https://github.com/HumanSignal/labelImg), etc.
