@@ -66,22 +66,72 @@ document.addEventListener('DOMContentLoaded', () => {
     const consoleModal = document.getElementById('console-modal');
     const consoleModalClose = document.querySelector('.modal-close');
 
+    // Stockage de l'état des scripts
+    let scriptsState = {};
+
+    // Fonction pour actualiser l'état des scripts
+    function updateScriptsStatus() {
+        fetch('/api/scripts/status')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    scriptsState = data.scripts;
+                    
+                    // Mettre à jour l'UI pour chaque script
+                    Object.entries(data.scripts).forEach(([scriptName, info]) => {
+                        const runBtn = document.querySelector(`[data-script="${scriptName}"].btn-script-run`);
+                        const stopBtn = document.querySelector(`[data-script="${scriptName}"].btn-script-stop`);
+                        const status = document.querySelector(`[data-script-status="${scriptName}"]`);
+                        
+                        if (runBtn) runBtn.disabled = info.running;
+                        if (stopBtn) stopBtn.disabled = !info.running;
+                        
+                        if (status) {
+                            if (info.running) {
+                                status.innerHTML = '<span class="status-badge running">EN COURS (PID: ' + info.pid + ')</span>';
+                                status.style.color = '#28a745';
+                            } else {
+                                status.innerHTML = '<span class="status-badge stopped">Arrêté</span>';
+                                status.style.color = '#6c757d';
+                            }
+                        }
+                    });
+                }
+            })
+            .catch(err => console.error('Erreur statut scripts:', err));
+    }
+
+    // Initialiser le statut et l'actualiser toutes les 2 secondes
+    updateScriptsStatus();
+    setInterval(updateScriptsStatus, 2000);
+
     scriptRunBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const script = btn.dataset.script;
+            
+            // Vérifier si déjà en cours
+            if (scriptsState[script]?.running) {
+                addConsoleLog(`[WARN] ${script} est déjà en cours d'exécution`);
+                return;
+            }
+            
             addConsoleLog(`[RUN] Lancement de ${script}...`);
+            btn.disabled = true;
             
             fetch(`/api/scripts/run/${script}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
                         addConsoleLog(`[INFO] ${script} lancé avec succès`);
+                        updateScriptsStatus();
                     } else {
                         addConsoleLog(`[ERROR] Erreur: ${data.error}`);
+                        btn.disabled = false;
                     }
                 })
                 .catch(err => {
                     addConsoleLog(`[ERROR] ${err.message}`);
+                    btn.disabled = false;
                 });
         });
     });
@@ -89,19 +139,30 @@ document.addEventListener('DOMContentLoaded', () => {
     scriptStopBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const script = btn.dataset.script;
+            
+            // Vérifier si en cours
+            if (!scriptsState[script]?.running) {
+                addConsoleLog(`[WARN] ${script} n'est pas en cours d'exécution`);
+                return;
+            }
+            
             addConsoleLog(`[STOP] Arrêt de ${script}...`);
+            btn.disabled = true;
             
             fetch(`/api/scripts/stop/${script}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
                         addConsoleLog(`[INFO] ${script} arrêté`);
+                        updateScriptsStatus();
                     } else {
                         addConsoleLog(`[WARN] ${data.error}`);
+                        btn.disabled = false;
                     }
                 })
                 .catch(err => {
                     addConsoleLog(`[ERROR] ${err.message}`);
+                    btn.disabled = false;
                 });
         });
     });

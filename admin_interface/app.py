@@ -171,6 +171,46 @@ def processes():
 
 # ============= API SCRIPTS ============= 
 
+@app.route('/api/scripts/status')
+def scripts_status():
+    """Vérifie l'état réel de tous les scripts"""
+    try:
+        scripts_list = ['test_app.py', 'test_hardware.py', 'run_auto.sh', 'run_manual.sh']
+        status = {}
+        
+        for script in scripts_list:
+            is_running = False
+            pid = None
+            
+            # Chercher le processus
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    # Gérer le cas où cmdline est None ou vide
+                    cmdline_list = proc.info['cmdline']
+                    if cmdline_list is None:
+                        cmdline = ''
+                    else:
+                        cmdline = ' '.join(cmdline_list)
+                    
+                    if script in cmdline:
+                        is_running = True
+                        pid = proc.info['pid']
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied, TypeError):
+                    pass
+            
+            status[script] = {
+                'running': is_running,
+                'pid': pid
+            }
+        
+        return jsonify({
+            'success': True,
+            'scripts': status
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/api/scripts/run/<script_name>')
 def run_script(script_name):
     """Lance un script"""
@@ -181,6 +221,15 @@ def run_script(script_name):
         # Vérifier que le script existe
         if not os.path.exists(script_path):
             return jsonify({'success': False, 'error': f'Script {script_name} non trouvé'})
+        
+        # Vérifier que le script n'est pas déjà en cours
+        for proc in psutil.process_iter(['pid', 'cmdline']):
+            try:
+                cmdline = ' '.join(proc.cmdline) if proc.cmdline else ''
+                if script_name in cmdline:
+                    return jsonify({'success': False, 'error': f'{script_name} est déjà en cours d\'exécution'})
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
         
         # Lancer le script
         if script_name.endswith('.py'):
